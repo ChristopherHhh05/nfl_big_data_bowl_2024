@@ -1,0 +1,5 @@
+papers/
+Data/
+*.Rhistory
+env_setup*
+*.docx

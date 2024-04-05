@@ -1,0 +1,514 @@
+---
+title: "A New Metric to Evaluate Defensive Tackles in NFL"
+author: "Chris Wang"
+format: pdf
+editor: visual
+---
+# Introduction
+
+My project adapts from a Kaggle competition (NFL Big Data Bowl 2024). "American football is a complex sport, but once an offensive player receives a handoff or catches a pass, all 11 defenders focus on one task -- tackle that ball carrier as soon as possible" [1]. This year's competition focuses on creating a practical and novel metric to evaluate tackling performance of game plays. While tackling is an important element of an NFL football game, little effort has been made in tackling evaluations. Previous tackling statistics only records single-dimensional game summary statistics, such as solely or assisted tackle numbers of each defensive player, sacks, and forced fumbles. Complex evaluation metrics are previously only created for other positions, such as the passing rating to evaluate quarterbacks (QB). Such complex evaluation metrics are hard to create for analyzing tackles because a successful tackle usually involves with several defensive positions other than a single position. Thus, there is no universal standards for the tackle evaluations in a game, and leaves this evaluation open ended. 
+
+This year's competition is mainly built upon the NFL Next Gen Stat data for Week 1-9 of the 2022 NFL season. Each week's dataset (a csv. file) consists of frame-by-frame tracking data of each player's field status (such as location, speed, acceleration, team formation.), game situations (such as game clock, field positions, real-time score and win probability of home/visitor's team.), and play outcomes (such as resulted yardage, penalties, and fouls.). Other supplementary dataset includes player's information, game's information, and PFF scouting data. 
+
+The tackle evaluation metric I created is called "pivotal factor" and is constructed based on a variety of detailed play statistics, such as game clock, position of the football, and play results etc. The metric reflects the importance of each tackling play and its contribution to the entire game. "Pivotal factor" could be a metric that football fans are most interested and has the potential to holistically evaluate defensive players in terms of their tackling contribution to the team. Table 1 shows some tackling plays with my evaluation based on "pivotal factor". The table also includes some other statistics of the dataset that are used to calculate the holistic metric. 
+
+# Method
+
+## Preprocess and data wrangle
+
+After reading in the original data, I preprocessed on four main datasets----play description data, detailed tackle recording data, player's information, and 9 weeks' game tracking data of each player. Four kinds of datasets are linked together by each observation's "nflId", "ballCarrierName", "gameId", and "playId". Since each week's tracking data is very large and cost huge amount of computational resource, I preprocessed each week's data separately before combining them. For each week's data, I grouped them by each game and play, and focused on 26 frames' tracking of 22 on-filed players in any given play. I used two strategies to reduce frame numbers for further analysis. The first filter strategy was to filter out frames irrelevant to tackles by scrutinizing the "event" variable. Defensive tackling process usually starts when an offensive player possesses the football. Thus, for a passing play, only pass outcome frame (ex. a caught pass) was kept and all snap process and passing trajectory frames were filtered out. Other important frames included handoff and run events. This strategy reduced to 2 or 3 frames for each play. The second strategy was to limit my analysis on key players only. I used tackle dataset to identify players who was directly involved in a solely tackle or an assisted tackle and filter out other players. The strategy reduced to only 2 or 3 players' tracking data for each play. After each week's tracking data was reduced in size, I combined them to an integrated tracking file for all 9 weeks. The tracking data was then split into offensive players' dataset and defensive players' dataset based on play description data file that records defensive side and offensive ball carrier. As for this project, only defensive players' tracking data was considered for the sake to avoid complex network analysis between each offensive and defensive player. 
+
+## Principle Component Analysis (PCA)
+
+The defensive player's tracking data was reduced to nearly 40000 observations of 35 variables. I deployed PCA to explore collinearity between different variables and to summarize covariates' information to reduce dimensionality of the dataset. I either transformed all non-continuous variables into ordinary categorical variables or filtered out discrete variables for later usage, treating as cluster category reference in PC plots. Based on the summary of PCA in Table 2 and standardized variance plot in Figure 1, the first 15 PCs were chosen to reduce variable dimensions because they explained nearly 80% of remaining variance in the covariate matrix. 
+
+A remaining question is how these 15 PCs would assist my feature selection process. I further computed each variable's contribution to every PC separately. As in Table 3, some variables related to game situation and play outcomes were identified as relative high contributions to 15 PCs. For clearer visualization, I also plotted biplots of the first 2 PCs against each other and superimposed loadings of each variable on the first 2 PCs. Consistent feature contribution results were shown in Figure 2. Longer arrows mean larger feature contributions. For example, play result, distance to the endzone, and expected points of a play have large contributions to PC2, while play ID and pre-snap home/visitor team scores have large contributions to PC1. Furthermore, the angle between arrows of pre-snap home team and visitor team scores is very small, indicating high collinearity between the two variables. Thus, some simplified metric (like score difference) could later be created to summarize two variables information. 
+
+## The "pivotal factor" metric
+
+The "pivotal factor" was calculated based on factors that were deemed important features both in terms of feature contribution in Table 3 and the general knowledge of important tackling factors as football fans. In determining the "pivotal factor", I included the tracking of game time left in the game, home/visitor team score difference, current downs, play result, distance to the first down yard line, distance to the endzone, distance between the tackling spot and previous events of a catch, handoff, or run. I assigned weighted scores to each of these variables and summed them up for the final "pivotal factor" of each play. 
+
+This section below would provide the detailed calculation of each variable's weight: 
+
+1.	Game time left in the game: The conclusion of a closely contested game often commands heightened attention from viewers. So, game clock near the end of the game should be given more weights. Only if the play is in fourth quarter, the game clock left in minutes are divided by 2 as the weighted score. And overtime game clock automatically gives 10 credits as the weighted score.
+
+2.	Home/visitor team score difference: Usually, a game within two scores would be considered as a close game. So, only when the score is within 14 points, a negative exponential function is created to assign more weights when the score difference is closer to zero. 
+
+3.	Current down: Each down is given their numeric down number as their scores. For example, the first down contributes 1 credit and the fourth down contributes 4 credits. 
+
+4.	Play result: Only negative play result is considered defensive gains. So, I apply a log function to the negative play results and multiply the result by 4 to give this element more weights, as play result is deemed to have more contributions to PCs in Figure 2. 
+
+5.	Distance to the first down: For positive offensive play in third or fourth down, a distance less than 5 yards to the first down yard line would be considered a significant defensive stop. So, an exponential function of (5-yardsToGo) is created for the weighted credits. 
+
+6.	Distance to the endzone: Since a usual scoring distance (like a field goal) is around 40-yard line, credits of distance to the endzone is only considered when the football moves within the 40-yard line. A negative exponential function is applied to give more weights when the football is closer to goal line. 
+
+7.	Distance between the tackling spot and previous events of a catch, handoff, or run: A Euclidean distance is calculated for the distance between the tackling spot and the previous event's spot. The distance is then divided by 10 to give the more weighted credits for a defensive player that moves farther to tackle down the ball carrier. 
+
+# Result
+
+## Biplot
+
+Several biplots were generated with different categorical variables to distinguish different clusters of PCA processed dataset as shown in Figure 3-6. The reference PC biplots did not reveal obvious separation patterns across different categories. This was probably due to the diverse nature of a tackle process. A tackle could be made by any teammates who were close to the ball carrier on the field and a successful tackle usually resulted from the entire team's effort on creating pressures and coverages on the offense. Therefore, I did not expect perfectly separated clusters in the PC plots. However, biplots should only be read to analyze minor patterns within the dataset. Figure 3 showed minor separation between tackles made by primary defense positions (such as defensive line and linebacks) and secondary defense positions (such as cornerbacks and safeties). The primary defense were more likely to involve in run game defense, while the secondary defense were more likely to involve in passing defense. Figure 4 showed minor separation between tackles and previous events, indicating a successful tackle did change the game situations. Figure 5 showed a clear separation between shotgun formation and other offensive formations. The shotgun tactic is often characterized by swift and short yardage plays, designed to enhance completion probabilities while accepting the trade-off of potentially limited yardage gains. So, the shotgun formation tended to be associated with a higher tackle rate than other offensive formations. Figure 6 exhibited an interesting finding that each team's tackling pattern spread across the vertical PC other than the horizontal PC. As the philosophy to tackle was generally consistent for each NFL team----tackling down the nearest ball carrier as soon as possible, each team's tackling pattern did not vary in different play situations. 
+
+# The "pivotal factor" as a new metric
+
+After computing each play's pivotal factor, I plotted the histogram of each tackling play's pivotal factor in Week 1-9 of 2022 NFL seasons. Figure 7 and 8 supported the validity of the "pivotal factor" metric in distinguishing NFL player's performance. Figure 7 exhibited that the "pivotal factor" histogram was under a left-skewed distribution with a mean around 10. The most pivotal play had a pivotal score over 30. I further compiled the tackle data to represent the average pivotal score a player had across the half season in 2022. Figure 8 showed the histogram of each player's tackling pivotal factor in Week 1-9 of 2022 NFL seasons. The histogram showed a normal distribution of player's pivotal score with a similar mean around 10. The highest pivotal score was a little over 20. Since Figure 7 and 8 exhibit near normal or normal distributed pivotal factor score, the metric preserved the natural distribution of tackling performance of NFL players. The metric also successfully distinguished tackling performance of different players. 
+
+To further check the validity of the new metric, I listed out the top 10 individual play's tackling pivotal score in Table 1. The top play is made by James Smith-Williams who made a tackle for a loss of 4 yards in fourth quarter on 3rd down and 6 yards to the endzone. The play was credited with a high score because its game situation is a close game with nearly nothing left on the clock and the player made a huge play with a sack on a 3rd down for even a loss of 4 yards. A video clip of this play could be found at the "10:52" starting time on YouTube [2].  Table 4 listed the top 10 player's average tackling pivotal score, in which Jason Pierre-Paul performed the best. This validated my metric because Jason Pierre-Paul is a well-known defensive player, and the metric showed the ability to rank up well-known players in defensive teams. 
+
+# Conclusion
+
+This project addresses the need for a comprehensive and novel metric to evaluate tackling performance in the context of NFL. Even as a fundamental aspect of the game, tackling has lacked a standardized evaluation metric. The newly proposed metric could fill in the gap of the absence of tackling evaluation. The "pivotal factor" metric combines single factors such as game time, team score differences, downs, play results, and spatial relationships on the field, using combined weights to calculate the new metric in terms of player's tackling performance. The metric is further validated with the natural distribution of tackle performance.
+
+One pitfall of this project is that the weight assignment process still involves with human judgment on the importance of a defensive tackle play, although with the help of PCA to reduce covariates related to tackling. Human judgment could lead to bias in reinforcing personal preferences on the standards of tackle evaluation metric. Besides, we should use the metric carefully when making any conclusions related to tackles. The metric solely analyzes player's tackle performance and does not indicate performance of other aspects of defensive performance. One should not extend the metric to holistic defensive evaluation. 
+
+There are still much more factors to consider in the NFL Next Gen Stat dataset. In the future, possible enrichment of the tackle evaluation metric could involve force factor analysis. A defensive player's physical condition, speed, acceleration, and angle relative to the ball carrier could be added to the metric to include interactions between each defensive and offensive players in determining tackling success rate. 
+
+# Reference
+
+1.	Kaggle competition description page:
+https://www.kaggle.com/competitions/nfl-big-data-bowl-2024/data
+
+2.	(start from 10:52) https://youtu.be/fuIp98BPoG4?si=SY9yE86Tmg77Mpsl&t=652 
+
+# Appendix - Figures
+
+![Figure 1](output/fig1.png)
+
+![Figure 2](output/fig2.png)
+
+![Figure 3](output/fig3.png)
+
+![Figure 4](output/fig4.png)
+
+![Figure 5](output/fig5.png)
+
+![Figure 6](output/fig6.png)
+
+![Figure 7](output/fig7.png)
+
+![Figure 8](output/fig8.png)
+
+# Appendix - Tables
+
+```{r, message=FALSE}
+# print Table 1
+load("output/tab1.rdata")
+print(tab4)
+# print Table 2
+load("output/tab2.rdata")
+print(pc_tab)
+# print Table 3
+load("output/tab3.rdata")
+print(tab3)
+# print Table 4
+load("output/tab4.rdata")
+print(tab5)
+```
+
+# Appendix - Code
+
+## Preprocess and data wrangle
+
+```{r, message=FALSE}
+library(tidyverse)
+library(readr)
+library(factoextra)
+library(lubridate)
+```
+
+```{r, message=FALSE, eval=FALSE}
+# Read in data
+tracking_week1 <- read_csv("Data/tracking_week_1.csv")
+tracking_week2 <- read_csv("Data/tracking_week_2.csv")
+tracking_week3 <- read_csv("Data/tracking_week_3.csv")
+tracking_week4 <- read_csv("Data/tracking_week_4.csv")
+tracking_week5 <- read_csv("Data/tracking_week_5.csv")
+tracking_week6 <- read_csv("Data/tracking_week_6.csv")
+tracking_week7 <- read_csv("Data/tracking_week_7.csv")
+tracking_week8 <- read_csv("Data/tracking_week_8.csv")
+tracking_week9 <- read_csv("Data/tracking_week_9.csv")
+games <- read_csv("Data/games.csv")
+plays <- read_csv("Data/plays.csv")
+players <- read_csv("Data/players.csv")
+tackles <- read_csv("Data/tackles.csv")
+```
+
+```{r, eval=FALSE}
+# Combine tracking data to play data, but need to preprocess each week's tracking data first
+# before combing them all, because the combined data is too large to process
+
+# Add in player names to tackles data
+tackles <- tackles |> left_join(players, by = c("nflId" = "nflId")) |> select(-c(height, weight, birthDate, collegeName))
+
+# There are many different kinds of events, but we are only interested in the ones that are related
+# to tackles (handoff, pass_outcome_caught, run, tackle)
+tracking_week1 <- tracking_week1 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  # add in tackles data to tracking data
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  # add plays data to include ball carrier
+  left_join(plays, by = c("gameId", "playId")) |> 
+  # only keep tracking data for the ball carrier and tackler
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week2 <- tracking_week2 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week3 <- tracking_week3 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week4 <- tracking_week4 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week5 <- tracking_week5 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week6 <- tracking_week6 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week7 <- tracking_week7 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week8 <- tracking_week8 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+
+tracking_week9 <- tracking_week9 |> group_by(gameId, playId) |> 
+  filter(event %in% c("pass_outcome_caught", "handoff", "run", "tackle")) |>
+  filter(displayName != "football") |>
+  select(gameId, playId, displayName, frameId, time, x, y, s, a, o, dir, event) |>
+  left_join(tackles, by = c("gameId", "playId", "displayName")) |> 
+  left_join(plays, by = c("gameId", "playId")) |> 
+  filter(!is.na(nflId) | displayName==ballCarrierDisplayName) 
+```
+
+```{r}
+# Load pre-saved environment when running on local machine, in order to save computation time
+if (TRUE){
+  combined_variables <- read_rds("Data/combined_variables.rds")
+  tracking_combined <- combined_variables$tracking_combined
+  tracking_defense <- combined_variables$tracking_defense
+  tracking_defense_new <- combined_variables$tracking_defense_new
+  tracking_offense <- combined_variables$tracking_offense
+  pca_defense <- combined_variables$pca_defense
+  players <- combined_variables$players
+  plays <- combined_variables$plays
+  games <- combined_variables$games
+} else{
+  # Combine 9 weeks tracking data and summarize to mutate several features
+  tracking_combined <- bind_rows(tracking_week1, tracking_week2, tracking_week3, tracking_week4,
+                                 tracking_week5, tracking_week6, tracking_week7, tracking_week8,
+                                 tracking_week9) # combine all weeks of tracking data 
+  tracking_combined <- tracking_combined |> 
+    mutate(defenderId = nflId,
+           event = as.factor(event),
+           position = as.factor(position),
+           offenseFormation = as.factor(offenseFormation)) |> 
+    mutate(disToEndZone = ifelse(
+      possessionTeam == yardlineSide, 100 - yardlineNumber, yardlineNumber))
+  
+  # split combined data into defense and offense players
+  tracking_defense <- tracking_combined |>
+    select(-c(displayName, nflId, ballCarrierDisplayName, playDescription, yardlineSide,
+              yardlineNumber, passResult, passLength, penaltyYards, prePenaltyPlayResult,
+              playNullifiedByPenalty, absoluteYardlineNumber, foulName1, foulName2, foulNFLId1,
+              foulNFLId2)) |>
+    filter(!is.na(tackle))
+  
+  tracking_offense <- tracking_combined |>
+    # anti_join(tracking_defense)
+    select(-c(displayName, nflId, ballCarrierDisplayName, playDescription, yardlineSide,
+              yardlineNumber, passResult, passLength, penaltyYards, prePenaltyPlayResult,
+              playNullifiedByPenalty, absoluteYardlineNumber, foulName1, foulName2, foulNFLId1,
+              foulNFLId2)) |>
+    select(-c(tackle, assist, forcedFumble, pff_missedTackle, position)) |>
+    # mutate(defenderId = nflId) |>
+    filter(is.na(defenderId))  
+}
+```
+
+
+## PCA on combined tracking data 
+```{r}
+# PCA implementation for defense players
+if (!exists("pca_defense")){
+  tracking_defense_new <- tracking_defense |> select(-c(time, possessionTeam, defensiveTeam, event,
+                                                        position, offenseFormation)) |>
+  mutate(gameClock = as.numeric(gameClock)) |>
+  na.omit() 
+  pca_defense = prcomp(tracking_defense_new, center = TRUE, scale. = TRUE)
+}
+pc_tab <- summary(pca_defense)
+pca_var_p <- qplot(1:(ncol(tracking_defense_new)), pca_defense$sdev) + 
+  geom_hline(yintercept = 1, linetype = 2) + 
+  xlab("Principal Component") + 
+  ylab("Standard deviation") + 
+  ggtitle("Scree plot")
+# Use first 15 PCs for explaining nearly 80% of variance and arrive at standard deviation of 1 
+```
+
+```{r, eval=FALSE}
+######################################################################################
+# Save the working environment
+######################################################################################
+
+# temporarily save environment
+# save pca_defense, tracking_combined
+# Create a list containing the variables
+variables_list <- list(pca_defense = pca_defense, tracking_combined = tracking_combined,
+                       tracking_defense = tracking_defense, tracking_offense = tracking_offense,
+                       tracking_defense_new = tracking_defense_new, 
+                       players = players, plays = plays, games = games)
+
+# Save the list to a single RDS file
+saveRDS(variables_list, "Data/combined_variables.rds")
+```
+
+## Biplot
+```{r, message=FALSE}
+tracking_defense_new$PC1 <- pca_defense$x[,1]
+tracking_defense_new$PC2 <- pca_defense$x[,2]
+
+# Get arrow end point locations (loadings*17 for effect)
+l.x <- pca_defense$rotation[,1]*17
+l.y <- pca_defense$rotation[,2]*17
+
+# Get label positions (%15 further than end of arrows)
+l.posx <- l.x*1.15
+l.posy <- l.y*1.15
+
+# Get labels for plot (variable names)
+l.labels <- row.names(pca_defense$rotation)
+
+# Plot the biplot with superimposed feature importance (loadings)
+bip1 <- ggplot() +
+  geom_point(data = tracking_defense_new, aes(PC1, PC2, color = as.factor(tackle)), size = 1) +
+  geom_segment(aes(x=0, y=0, xend = l.x, yend = l.y), 
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"), color = "darkorange4") +
+  geom_text(aes(x = l.posx, y = l.posy, label = l.labels), 
+            size = 3, hjust = 0, color = "darkorange4") + # labels
+  theme_classic()
+
+# Get variable contributions to PCs
+tab3 <- get_pca_var(pca_defense)$contrib[,1:15]
+```
+
+
+```{r}
+# Add categorical variable back to pca dataset and analyze biplot by different categorical variables
+tracking_defense_new <- tracking_defense_new |> 
+  left_join(tracking_defense %>% select(gameId, playId, defenderId, frameId, possessionTeam,
+                                        defensiveTeam, event, position, offenseFormation), 
+            by = c("gameId", "playId", "defenderId", "frameId"))
+
+
+## biplot by position
+bip2 <- ggplot() +
+  geom_point(data = tracking_defense_new, aes(PC1, PC2, color = position), size = 1) +
+  geom_segment(aes(x=0, y=0, xend = l.x, yend = l.y), arrow = arrow(length = unit(0.2, "cm"), type = "closed")) +
+  geom_text(aes(x = l.posx, y = l.posy, label = l.labels), size = 3, hjust = 0) +
+  theme_classic()
+
+## biplot by event (tackle or not)
+tracking_defense_new <- tracking_defense_new |> 
+  mutate(event_tackle = ifelse(event == "tackle", 1, 0))
+
+bip3 <- ggplot() +
+  geom_point(data = tracking_defense_new, aes(PC1, PC2, color = as.factor(event_tackle)), size = 1) +
+  geom_segment(aes(x=0, y=0, xend = l.x, yend = l.y), arrow = arrow(length = unit(0.2, "cm"), type = "closed")) +
+  geom_text(aes(x = l.posx, y = l.posy, label = l.labels), size = 3, hjust = 0) +
+  theme_classic()
+
+## biplot by offenseFormation
+bip4 <- ggplot() +
+  geom_point(data = tracking_defense_new, aes(PC1, PC2, color = offenseFormation), size = 1) +
+  geom_segment(aes(x=0, y=0, xend = l.x, yend = l.y), arrow = arrow(length = unit(0.2, "cm"), type = "closed")) +
+  geom_text(aes(x = l.posx, y = l.posy, label = l.labels), size = 3, hjust = 0) +
+  theme_classic()
+
+## biplot by defensiveTeam
+bip5 <- ggplot() +
+  geom_point(data = tracking_defense_new, aes(PC1, PC2, color = as.factor(defensiveTeam)), size = 1) +
+  geom_segment(aes(x=0, y=0, xend = l.x, yend = l.y), arrow = arrow(length = unit(0.2, "cm"), type = "closed")) +
+  geom_text(aes(x = l.posx, y = l.posy, label = l.labels), size = 3, hjust = 0) +
+  theme_classic()
+```
+
+
+## Creating metrics for defensive player's tackling contribution
+```{r, message=FALSE, warning=FALSE}
+# Get the distance between the tackle spot and the spot of previous event
+tracking_defense_new <- tracking_defense_new |>
+  mutate(x_tackle = ifelse(event == "tackle", x, NA),
+         y_tackle = ifelse(event == "tackle", y, NA))
+tackle_position <- tracking_defense_new |>
+  group_by(gameId, playId, defenderId) |>
+  summarise(x_tackle = max(x_tackle, na.rm = TRUE),
+            y_tackle = max(y_tackle, na.rm = TRUE))
+tracking_defense_new <- tracking_defense_new |>
+  select(-c(x_tackle, y_tackle)) |>
+  left_join(tackle_position, by = c("gameId", "playId", "defenderId")) |>
+  mutate(dist_tackle = ifelse(event!="tackle", sqrt((x_tackle - x)^2 + (y_tackle - y)^2), NA)) |>
+  filter(dist_tackle != Inf)
+
+# Construct pivot factor dataframe
+pivot <- tracking_defense_new |>
+  # gameClock credit, 0.5 for each minute, 7.5 for max credit in 4th quarter, 10 for overtime
+  mutate(credit_gameClock = case_when(
+    quarter == 4 ~ (54000-gameClock)/(3600*2),
+    quarter == 5 ~ 10,
+    TRUE ~ 0
+  )) |>
+  # score differential credit, max credit is 10 for 0 score differential
+  mutate(credit_scoreDiff = case_when(
+    abs(preSnapHomeScore - preSnapVisitorScore) <= 14 ~ 10*exp(-abs(preSnapHomeScore - preSnapVisitorScore)/7),
+    TRUE ~ 0
+  )) |>
+  # down credit, max credit is 4 for a 4th down tackle
+  mutate(credit_down = case_when(
+    down == 4 ~ 4,
+    down == 3 ~ 3,
+    down == 2 ~ 2,
+    down == 1 ~ 1,
+    TRUE ~ 0
+  )) |>
+  # play result credit, max credit is 4*log(100)=16 for a tackle for loss of 100 yards, only negative play results are considered
+  mutate(credit_playResult = ifelse(playResult < 0, 4*log(-playResult), 0)) |>
+  # distance to endzone credit, max credit is 2*exp(39/20)=14 for a tackle at 1 yardline 
+  mutate(credit_disToEndZone = ifelse(disToEndZone <= 40, 2*exp((40-disToEndZone)/20), 0)) |>
+  # distance to 1st down credit, max credit is exp(5/2.5)=7 for a tackle resulting inches to 1st down, only 3rd and 4th down which have less than 5 yards to go are considered
+  mutate(credit_disTo1stDown = ifelse(
+    (yardsToGo-playResult) > 0 & yardsToGo <=5 & down != 1 & down != 2,
+    exp((5-yardsToGo)/3), 0)) |>
+  # distance to tackle spot credit, max credit is 2*exp(39/20)=14 for a tackle at 1 yardline
+  mutate(credit_distTackle = dist_tackle/10) |> 
+  mutate(pivotal = credit_gameClock + credit_scoreDiff + credit_down + credit_playResult +
+           credit_disToEndZone + credit_disTo1stDown + credit_distTackle)
+
+```
+
+## Analyze the metric validity
+```{r, message=FALSE, warning=FALSE}
+# a <- pivot |> 
+#   group_by(defenderId) |>
+#   mutate(tackle_number = n()) 
+# a[a$defenderId == unique(a$defenderId),]
+# a[1,]
+
+pivot <- pivot |> 
+  group_by(defenderId) |>
+  mutate(tackle_number = n()) 
+# |>
+#   ungroup() |>
+#   select(gameId, playId, tackle, assit, forcedFumble, pff_missedTackle, ballCarrierId, quarter, down, yardsToGo, gameClock, playResult, defendersInTheBox, expectedPointsAdded, disToEndZone, defensiveTeam, event, position, offenseFormation, dist_tackle, credit_gameClock, credit_scoreDiff, credit_down, credit_playResult, credit_distTackle, credit_disToEndZone, credit_disTo1stDown, pivotal, tackle_number)
+
+pivot_perTackle <- pivot |>
+  left_join(players |> select(nflId, displayName), by = c("defenderId" = "nflId")) |>
+  mutate(defenderName = displayName) |> select(-displayName) |>
+  left_join(players |> select(nflId, displayName), by = c("ballCarrierId" = "nflId")) |>
+  mutate(ballCarrierName = displayName) |> select(-displayName) |>
+  select(defenderName, ballCarrierName, quarter, down, yardsToGo, gameClock, playResult, disToEndZone, defensiveTeam, event, position, offenseFormation, dist_tackle, pivotal, tackle_number)
+
+pivot_perPlayer <- pivot |>
+  group_by(defenderId) |>
+  summarise(pivotal = mean(pivotal), tackle_number = n()) |>
+  left_join(players |> select(nflId, displayName, position), by = c("defenderId" = "nflId")) |>
+  mutate(defenderName = displayName) |> select(-displayName, -defenderId) |>
+  select(defenderName, position, pivotal, tackle_number)
+
+tab4 <- pivot_perTackle |> filter(tackle_number >=5) |> select(-defenderId)|> arrange(desc(pivotal)) |> head(10)
+tab5 <- pivot_perPlayer |> filter(tackle_number >=5) |> arrange(desc(pivotal)) |> head(10)
+
+# plot player position vs. pivotal
+pivot_perPlayer |> filter(tackle_number >=5) |>
+  ggplot(aes(x = position, y = pivotal)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "Pivotal vs. Position", x = "Position", y = "Pivotal")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+# save the plots
+
+# png("output/fig1.png")
+# pca_var_p
+# dev.off()
+
+png("output/fig2.png")
+bip1
+dev.off()
+
+png("output/fig3.png")
+bip2
+dev.off()
+
+png("output/fig4.png")
+bip3
+dev.off()
+
+png("output/fig5.png")
+bip4
+dev.off()
+
+png("output/fig6.png")
+bip5
+dev.off()
+
+# plot histograms of pivotal factor
+png("output/fig7.png")
+hist(pivot$pivotal, breaks = 20, main = "Histogram of Pivotal Score By Each Play", xlab = "Pivotal Score") |> recordPlot()
+dev.off()
+
+png("output/fig8.png")
+hist(pivot |> group_by(defenderId) |> summarise(mean_pivotal = mean(pivotal)) |> pull(mean_pivotal), breaks = 20, main = "Histogram of Mean Pivotal Score By Each Player", xlab = "Mean Pivotal Score")
+dev.off()
+
+
+# save the data into rdata
+save(tab4, file = "output/tab1.rdata")
+save(tab5, file = "output/tab4.rdata")
+save(pc_tab, file = "output/tab2.rdata")
+save(tab3, file = "output/tab3.rdata")
+```
+
+
